@@ -27,7 +27,7 @@ python get_best_ref.py --fasta $COG_PUBLISHED_DIR/elan.latest.consensus.matched.
 minimap2 -t 24 -a -x asm5 $WUHAN_FP $OUTDIR/best_refs.paired.fasta > $OUTDIR/output.sam 2> $OUTDIR/mm2.log
 
 # uk_full_untrimmed_alignment
-datafunk sam_2_fasta -s $OUTDIR/output.sam -r $WUHAN_FP -o $OUTDIR/naive_msa.fasta 2> $OURDIR/dfunk.log
+datafunk sam_2_fasta -s $OUTDIR/output.sam -r $WUHAN_FP -o $OUTDIR/naive_msa.fasta 2> $OUTDIR/dfunk.log
 
 # The 'naive' MSA here is not filtered on person-level identifiers, neither does
 # it consider any filtering or masking. We use it in the knowledge that some
