@@ -14,7 +14,8 @@ if not azure_endpoint or not azure_saskey:
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-c", "--container", help="Base container", required=True)
-parser.add_argument("-f", "--file", help="File to upload to blobstore")
+parser.add_argument("-f", "--file", help="Local file (to upload or download)")
+parser.add_argument("-b", "--blob", help="Remote file (to download)")
 args = parser.parse_args()
 
 # Connect to store and acquire container client
@@ -27,8 +28,8 @@ except ResourceNotFoundError:
     print("[NOTE] Container %s not found. Created it." % container_name)
 
 
-if args.file:
-    # Upload blob
+if args.file and not args.blob:
+    # If only a local file name provided, upload the blob
     if not os.path.isfile(args.file):
         sys.stderr.write("[FAIL] Cannot open %s" % args.file)
         sys.exit(2)
@@ -40,6 +41,20 @@ if args.file:
             blob_client.upload_blob(data)
         except ResourceExistsError:
             sys.stderr.write("[FAIL] Remote blob named %s already exists. Refusing to overwrite.\n" % remote_filename)
+            sys.exit(3)
+
+elif args.blob:
+    if args.file:
+        download_to = args.file
+    else:
+        download_to = os.path.abspath(args.blob)
+
+    blob_client = blob_service_client.get_blob_client(container=container_name, blob=args.blob)
+    with open(download_to, "wb") as download_fh:
+        try:
+            download_fh.write(blob_client.download_blob().readall())
+        except:
+            sys.stderr.write("[FAIL] Error encountered downloading remote blob %s.\n" % args.blob)
             sys.exit(3)
 
 # List all dirs and blobs
