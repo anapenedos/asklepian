@@ -39,7 +39,7 @@ print(','.join([
 ]))
 with open(args.msa) as all_fh:
     for name, seq, qual in readfq(all_fh):
-        central_sample_id = name.split('/')[1]
+        central_sample_id = name
 
         query_on_ref_pos = 0
         current_deletion_len = 0

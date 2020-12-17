@@ -23,13 +23,15 @@ for fpt, fp in ("FASTA", args.fasta), ("META", args.meta):
 # NOTE sample_date defined as collection_date else received_date
 collection_or_received_date = {}
 with open(args.meta) as metadata_fh:
-    for row in csv.DictReader(metadata_fh):
+    for row in csv.DictReader(metadata_fh, delimiter='\t'):
         cogid = row["central_sample_id"]
-        if row["collection_date"]:
-            sample_date = row["collection_date"]
-        else:
+        sample_date = row["collection_date"]
+
+        # Try the received date if collection date is invalid
+        if not sample_date or sample_date == "None" or len(sample_date) == 0:
             sample_date = row["received_date"]
 
+        # Give up with an error if impossibly, the sample_date could not be assigned...
         if not sample_date or sample_date == "None" or len(sample_date) == 0:
             sys.stderr.write("[FAIL] No sample date for %s\n" % cogid)
             sys.exit(2)
@@ -52,7 +54,7 @@ print(','.join([
 ]))
 with open(args.fasta) as all_fh:
     for name, seq, qual in readfq(all_fh):
-        central_sample_id = name.split('/')[1]
+        central_sample_id = name
 
         print(','.join([
             central_sample_id,
