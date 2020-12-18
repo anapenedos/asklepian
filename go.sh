@@ -46,6 +46,13 @@ python upload_azure.py -c genomics -f $OUTDIR/variant_table_$DATESTAMP.csv
 # Clean up
 rm $OUTDIR/best_refs.paired.fasta
 rm $OUTDIR/output.sam
-#rm $OUTDIR/naive_msa.fasta
 rm $OUTDIR/genome_table_$DATESTAMP.csv
-#rm $OUTDIR/variant_table_$DATESTAMP.csv
+
+# Push artifacts
+PUBDIR="$ASKLEPIAN_PUBDIR/$DATESTAMP"
+mkdir -p $PUBDIR
+mv $OUTDIR/naive_msa.fasta $PUBDIR
+mv $OUTDIR/variant_table_$DATESTAMP.csv $PUBDIR/naive_variant_table.csv
+mv $OUTDIR/best_refs.paired.ls $PUBDIR
+ln -fn -s $PUBDIR $ASKLEPIAN_PUBDIR/latest
+
