@@ -5,7 +5,6 @@ import argparse
 import pysam
 
 BAM_DIR = "/cephfs/covid/bham/nicholsz/artifacts/elan2/staging/alignment"
-DEPTH_DIR = "/cephfs/covid/bham/nicholsz/artifacts/elan2/staging/depth"
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--bestls", required=True)
@@ -46,54 +45,104 @@ for bam in os.scandir(BAM_DIR):
 
     bam_fh = pysam.AlignmentFile(bam.path)
 
-    total_depths = {} # use a dict to safeguard against non-consecutive pos in depth file
-    with open(os.path.join(DEPTH_DIR, bam.name+'.depth')) as depth_fh:
-        for line in depth_fh:
-            ref, pos, tot_depth = line.strip().split('\t')
-            total_depths[int(pos)] = int(tot_depth)
-
     # Assume the reference is valid, because its come through swell/elan
     sys.stderr.write("[NOTE] %s\n" % bam.name)
     if len(bam_fh.references) > 1:
         sys.stderr.write("[WARN] %s has %d references.\n" % (bam.name, len(bam_fh.references)))
     ref = bam_fh.references[0]
 
-    depths = bam_fh.count_coverage(
-            contig=ref,
-            quality_threshold=0,
-            read_callback="all"
-    )
-    n_all = [total_depths.get(i, 0) for i in range(bam_fh.lengths[0])]
+    # Init counters
+    # Let's do it with a dict to start with
+    depths = {}
+    for i0 in range(bam_fh.lengths[0]):
+        depths[i0+1] = {
+            'A': 0,
+            'C': 0,
+            'G': 0,
+            'T': 0,
+            'N': 0,
+            '-': 0,
+        }
 
+    # Count
+    # NOTE We'll use a read iterator for speed as the pileup usually turns out slower
+    # pysam count_coverage works in the same way but does not support counting indels currently
+    for read in bam_fh.fetch(contig=ref):
+        for qry_pos0, ref_pos0 in read.get_aligned_pairs():
+            if qry_pos0 is None and ref_pos0 is None:
+                # Ignore clipping
+                continue
+
+            if ref_pos0 is None:
+                # Ignore insertions as we're only SNP/del aware for the var table
+                continue
+
+            ref_pos1 = ref_pos0 + 1
+
+            if not qry_pos0:
+                # Deletion (no query against ref)
+                depths[ref_pos1]['-'] += 1
+            else:
+                # Match or substitution
+                depths[ref_pos1][read.seq[qry_pos0]] += 1
+
+    # Print
     if args.long:
-        for i in range(bam_fh.lengths[0]):
-            n_a = depths[0][i]
-            n_c = depths[1][i]
-            n_g = depths[2][i]
-            n_t = depths[3][i]
-            n_all = total_depths.get(i, 0)
-            n_valid = n_a + n_c + n_g + n_t
+        for i0 in range(bam_fh.lengths[0]):
+            i1 = i0 + 1
+            n_a = depths[i1]['A']
+            n_c = depths[i1]['C']
+            n_g = depths[i1]['G']
+            n_t = depths[i1]['T']
+            n_n = depths[i1]['N']
+            n_del = depths[i1]['-']
+
+            n_all = sum(depths[i1].values())
+            n_acgt = n_a + n_c + n_g + n_t
             print(','.join([str(x) for x in [
                 central_sample_id,
                 run_name,
-                i+1,
+                i1,
                 n_all,
-                n_valid,
+                n_acgt,
                 n_a,
                 n_c,
                 n_g,
                 n_t,
+                n_n,
+                n_del,
             ]]))
 
-    if args.wide:
+    elif args.wide:
+
+        n_all = []
+        n_a = []
+        n_c = []
+        n_g = []
+        n_t = []
+        n_n = []
+        n_del = []
+
+        for i0 in range(bam_fh.lengths[0]):
+            i1 = i0 + 1
+            n_a.append( depths[i1]['A'] )
+            n_c.append( depths[i1]['C'] )
+            n_g.append( depths[i1]['G'] )
+            n_t.append( depths[i1]['T'] )
+            n_n.append( depths[i1]['N'] )
+            n_del.append( depths[i1]['-'] )
+            n_all.append( sum(depths[i1].values()) )
+
         print(','.join([str(x) for x in [
             central_sample_id,
             run_name,
             ":".join([str(x) for x in n_all]),
-            ":".join([str(x) for x in depths[0]]),
-            ":".join([str(x) for x in depths[1]]),
-            ":".join([str(x) for x in depths[2]]),
-            ":".join([str(x) for x in depths[3]]),
+            ":".join([str(x) for x in n_a]),
+            ":".join([str(x) for x in n_c]),
+            ":".join([str(x) for x in n_g]),
+            ":".join([str(x) for x in n_t]),
+            ":".join([str(x) for x in n_n]),
+            ":".join([str(x) for x in n_del]),
         ]]))
 
     bam_fh.close()

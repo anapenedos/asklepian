@@ -43,6 +43,9 @@ python upload_azure.py -c genomics -f $OUTDIR/genome_table_$DATESTAMP.csv
 python make_variants_table.py --ref $WUHAN_FP --msa $OUTDIR/naive_msa.fasta > $OUTDIR/variant_table_$DATESTAMP.csv
 python upload_azure.py -c genomics -f $OUTDIR/variant_table_$DATESTAMP.csv
 
+# Make and push long and wide depth (position) tables
+#python make_depth_table.py
+
 # Clean up
 rm $OUTDIR/best_refs.paired.fasta
 rm $OUTDIR/output.sam
