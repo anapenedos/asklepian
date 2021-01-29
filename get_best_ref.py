@@ -43,6 +43,7 @@ n_len_discarded = 0
 # for each central_sample_id by tracking the FASTA with the fewest N sites.
 with open(args.metrics) as ocarina_out_fh:
     for row in csv.DictReader(ocarina_out_fh, delimiter='\t'):
+        fasta_path = os.path.basename(row["fasta_path"])
         central_sample_id = row["central_sample_id"]
         num_bases = int(row["num_bases"])
         pc_acgt = float(row["pc_acgt"])
@@ -58,12 +59,16 @@ with open(args.metrics) as ocarina_out_fh:
 
         if central_sample_id not in best_qc:
             # If this is the first genome, assume it is the best
-            best_qc[central_sample_id] = [num_masked, row["published_name"]]
+            best_qc[central_sample_id] = [num_masked, row["published_name"], fasta_path]
         else:
             # If the best has more masked sites than the current QC
             # swap to the better run
             if best_qc[central_sample_id][0] > num_masked:
-                best_qc[central_sample_id] = [num_masked, row["published_name"]]
+                best_qc[central_sample_id] = [num_masked, row["published_name"], fasta_path]
+            elif best_qc[central_sample_id][0] == num_masked:
+                # Use run_name lexo to break tie
+                if row["run_name"] > best_qc[central_sample_id][1].split(':')[1]:
+                    best_qc[central_sample_id] = [num_masked, row["published_name"], fasta_path]
 
 sys.stderr.write("[NOTE] %s best sequences found. Non-best sequences discarded (for length: %d). Writing FASTA.\n" % (len(best_qc), n_len_discarded))
 
@@ -77,7 +82,7 @@ with open(args.out_ls, 'w') as out_ls_fh:
 
         out_ls_fh.write('\t'.join([
             central_sample_id,
-            best_qc[central_sample_id][1],
+            best_qc[central_sample_id][2],
             str(status),
         ]) + '\n')
 
