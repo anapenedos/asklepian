@@ -15,7 +15,16 @@ mkdir -p $OUTDIR
 # Get best ref for each central_sample_id
 # TODO There is no need to do this de novo but we do so here for simplicity. We would do well to replace this as it will likely become quite slow, especially with IO perf on login node.
 #      We can work toward some future system where Majora keeps a "symlink" to the best QC pag for a PAG Group.
-python get_best_ref.py --fasta $COG_PUBLISHED_DIR/elan.latest.consensus.matched.fasta --elandir $COG_PUBLISHED_DIR > $OUTDIR/best_refs.paired.fasta 2> $OUTDIR/best_refs.paired.ls
+# NOTE samstudio8 2021-01-29
+#      Indeed this has become a little slow. In the interim, I have now made I
+#      possible to query for consensus metrics directly from Ocarina rather than
+#      indivudally hitting each QC file on the FS. We also use the consensus
+#      matched FASTA to write out sequences, saving considerable time.
+#        We also mark sequences in the paired.ls file to indicate if the best
+#      sequence has changed today (1) or not (0). This will allow later functions
+#      to decide whether or not to re-process the artifacts (e.g. for variants).
+ocarina --oauth --env get pag --test-name 'cog-uk-elan-minimal-qc' --pass --task-wait --task-wait-attempts 60 --ofield consensus.pc_masked pc_masked 'XXX' --ofield consensus.pc_acgt pc_acgt 'XXX' --ofield consensus.current_path fasta_path 'XXX' --ofield consensus.num_bases num_bases 0 --ofield central_sample_id central_sample_id 'XXX' --ofield run_name run_name 'XXX' --ofield published_name published_name 'XXX' > $OUTDIR/consensus.metrics.tsv
+python get_best_ref.py --fasta $COG_PUBLISHED_DIR/latest/elan.consensus.matched.fasta --metrics $OUTDIR/consensus.metrics.tsv --latest $ASKLEPIAN_PUBDIR/latest/best_refs.paired.ls --out-ls $OUTDIR/best_refs.paired.ls > $OUTDIR/best_refs.paired.fasta 2> $OUTDIR/best_refs.log
 
 ################################################################################
 # This stanza emulates the key first rules from phylopipe 1_preprocess_uk
