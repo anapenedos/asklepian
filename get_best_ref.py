@@ -90,7 +90,7 @@ with open(args.fasta) as latest_fasta_fh:
     for name, seq, qual in readfq(latest_fasta_fh):
         # Apparently I write the names out wrong so that's good
         curr_pag = name.split('|')[0].replace('COGUK', 'COG-UK')
-        central_sample_id = curr_pag.split('/')
+        central_sample_id = curr_pag.split('/')[1]
         if curr_pag in best_published_names:
             sys.stdout.write('>%s\n%s\n' % (central_sample_id, seq))
             seen_best_published_names.add(curr_pag)
