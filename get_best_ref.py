@@ -77,12 +77,13 @@ best_published_names = set([])
 with open(args.out_ls, 'w') as out_ls_fh:
     for central_sample_id in best_qc:
         status = 1 # assume new
-        if best_qc[central_sample_id][1] == previous_best.get(central_sample_id):
+        if best_qc[central_sample_id][2] == previous_best.get(central_sample_id):
             status = 0 # unless new best ref matches last best ref
 
         out_ls_fh.write('\t'.join([
             central_sample_id,
             best_qc[central_sample_id][2],
+            best_qc[central_sample_id][1],
             str(status),
         ]) + '\n')
 
