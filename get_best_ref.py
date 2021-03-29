@@ -98,6 +98,9 @@ with open(args.fasta) as latest_fasta_fh:
         curr_pag = name.split('|')[0].replace('COGUK', 'COG-UK')
         central_sample_id = curr_pag.split('/')[1]
         if curr_pag in best_published_names:
+            # Remove deletion chars (https://github.com/COG-UK/dipi-group/issues/38)
+            seq = seq.replace('-', '')
+
             sys.stdout.write('>%s\n%s\n' % (central_sample_id, seq))
             seen_best_published_names.add(curr_pag)
 sys.stderr.write("[NOTE] %s best sequences written.\n" % len(seen_best_published_names))
