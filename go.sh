@@ -73,6 +73,7 @@ python upload_azure.py -c genomics -f $OUTDIR/variant_table_$DATESTAMP.csv
 rm $OUTDIR/best_refs.paired.fasta
 rm $OUTDIR/output.sam
 rm $OUTDIR/genome_table_$DATESTAMP.csv
+rm $OUTDIR/test_v2_genome_table_$DATESTAMP.csv
 
 # Push artifacts
 PUBDIR="$ASKLEPIAN_PUBDIR/$DATESTAMP"
