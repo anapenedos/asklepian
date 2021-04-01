@@ -58,9 +58,9 @@ datafunk sam_2_fasta -s $OUTDIR/output.sam -r $WUHAN_FP -o $OUTDIR/naive_msa.fas
 
 # Make and push genome table
 python make_genomes_table.py --fasta $OUTDIR/best_refs.paired.fasta --meta $COG_PUBLISHED_DIR/majora.latest.metadata.matched.tsv > $OUTDIR/genome_table_$DATESTAMP.csv
-python make_genomes_table_v2.py --fasta $OUTDIR/best_refs.paired.fasta --meta $OUTDIR/consensus.metrics.tsv --best-ls $OUTDIR/best_refs.paired.ls > $OUTDIR/test_v2_genome_table_$DATESTAMP.csv
+python make_genomes_table_v2.py --fasta $OUTDIR/best_refs.paired.fasta --meta $OUTDIR/consensus.metrics.tsv --best-ls $OUTDIR/best_refs.paired.ls | gzip > $OUTDIR/test_v2_genome_table_$DATESTAMP.csv.gz
 python upload_azure.py -c genomics -f $OUTDIR/genome_table_$DATESTAMP.csv
-python upload_azure.py -c genomics -f $OUTDIR/test_v2_genome_table_$DATESTAMP.csv
+python upload_azure.py -c genomics -f $OUTDIR/test_v2_genome_table_$DATESTAMP.csv.gz
 
 # Make and push variant table
 python make_variants_table.py --ref $WUHAN_FP --msa $OUTDIR/naive_msa.fasta > $OUTDIR/variant_table_$DATESTAMP.csv
@@ -73,7 +73,7 @@ python upload_azure.py -c genomics -f $OUTDIR/variant_table_$DATESTAMP.csv
 rm $OUTDIR/best_refs.paired.fasta
 rm $OUTDIR/output.sam
 rm $OUTDIR/genome_table_$DATESTAMP.csv
-rm $OUTDIR/test_v2_genome_table_$DATESTAMP.csv
+rm $OUTDIR/test_v2_genome_table_$DATESTAMP.csv.gz
 
 # Push artifacts
 PUBDIR="$ASKLEPIAN_PUBDIR/$DATESTAMP"
