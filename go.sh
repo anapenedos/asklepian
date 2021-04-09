@@ -124,6 +124,7 @@ rm -f $OUTDIR/best_refs.paired.fasta
 rm -f $OUTDIR/output.sam
 rm -f $OUTDIR/genome_table_$DATESTAMP.csv
 rm -f $OUTDIR/test_v2_genome_table_$DATESTAMP.csv.gz
+rm -f $OUTDIR/consensus.metrics.tsv
 
 # Push artifacts
 PUBDIR="$ASKLEPIAN_PUBDIR/$DATESTAMP"
