@@ -75,28 +75,14 @@ fi
 ################################################################################
 
 # Make and push genome table
-if [ ! -f "$OUTDIR/genome_table_$DATESTAMP.csv" ]; then
-    python make_genomes_table.py --fasta $OUTDIR/best_refs.paired.fasta --meta $COG_PUBLISHED_DIR/majora.latest.metadata.matched.tsv > $OUTDIR/genome_table_$DATESTAMP.csv
-else
-    echo "[NOTE] Skipping make_genomes_table"
-fi
-
-if [ ! -f "$OUTDIR/test_v2_genome_table_$DATESTAMP.csv.gz" ]; then
-    python make_genomes_table_v2.py --fasta $OUTDIR/best_refs.paired.fasta --meta $OUTDIR/consensus.metrics.tsv --best-ls $OUTDIR/best_refs.paired.ls | gzip > $OUTDIR/test_v2_genome_table_$DATESTAMP.csv.gz
+if [ ! -f "$OUTDIR/v2_genome_table_$DATESTAMP.csv.gz" ]; then
+    python make_genomes_table_v2.py --fasta $OUTDIR/best_refs.paired.fasta --meta $OUTDIR/consensus.metrics.tsv --best-ls $OUTDIR/best_refs.paired.ls | gzip > $OUTDIR/v2_genome_table_$DATESTAMP.csv.gz
 else
     echo "[NOTE] Skipping make_genomes_table (v2)"
 fi
 
-
-if [ ! -f "$OUTDIR/genome_upload.ok" ]; then
-    python upload_azure.py -c genomics -f $OUTDIR/genome_table_$DATESTAMP.csv
-    touch $OUTDIR/genome_upload.ok
-else
-    echo "[NOTE] Skipping genome upload"
-fi
-
 if [ ! -f "$OUTDIR/genome_upload2.ok" ]; then
-    python upload_azure.py -c genomics -f $OUTDIR/test_v2_genome_table_$DATESTAMP.csv.gz
+    python upload_azure.py -c genomics -f $OUTDIR/v2_genome_table_$DATESTAMP.csv.gz
     touch $OUTDIR/genome_upload2.ok
 else
     echo "[NOTE] Skipping genome upload (v2)"
@@ -122,8 +108,7 @@ fi
 # Clean up
 rm -f $OUTDIR/best_refs.paired.fasta
 rm -f $OUTDIR/output.sam
-rm -f $OUTDIR/genome_table_$DATESTAMP.csv
-rm -f $OUTDIR/test_v2_genome_table_$DATESTAMP.csv.gz
+#rm -f $OUTDIR/v2_genome_table_$DATESTAMP.csv.gz
 rm -f $OUTDIR/consensus.metrics.tsv
 
 # Push artifacts
