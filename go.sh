@@ -76,7 +76,7 @@ fi
 
 # Make and push genome table
 if [ ! -f "$OUTDIR/v2_genome_table_$DATESTAMP.csv.gz" ]; then
-    python make_genomes_table_v2.py --fasta $OUTDIR/best_refs.paired.fasta --meta $OUTDIR/consensus.metrics.tsv --best-ls $OUTDIR/best_refs.paired.ls | gzip > $OUTDIR/v2_genome_table_$DATESTAMP.csv.gz
+    python make_genomes_table_v2.py --fasta $OUTDIR/naive_msa.fasta --meta $OUTDIR/consensus.metrics.tsv --best-ls $OUTDIR/best_refs.paired.ls | gzip > $OUTDIR/v2_genome_table_$DATESTAMP.csv.gz
 else
     echo "[NOTE] Skipping make_genomes_table (v2)"
 fi
