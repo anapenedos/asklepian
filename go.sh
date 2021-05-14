@@ -24,7 +24,7 @@ mkdir -p $OUTDIR
 #      sequence has changed today (1) or not (0). This will allow later functions
 #      to decide whether or not to re-process the artifacts (e.g. for variants).
 
-if [ ! -f "$OUTDIR/consensus.metrics.tsv" ]; then
+if [ ! -f "$OUTDIR/ocarina.ok" ]; then
     ocarina --oauth --env get pag --test-name 'cog-uk-elan-minimal-qc' --pass --task-wait --task-wait-attempts 60 \
         --ofield consensus.pc_masked pc_masked 'XXX' \
         --ofield consensus.pc_acgt pc_acgt 'XXX' \
@@ -38,12 +38,14 @@ if [ ! -f "$OUTDIR/consensus.metrics.tsv" ]; then
         --ofield collection_pillar collection_pillar '' \
         --ofield collection_date collection_date '' \
         --ofield received_date received_date '' > $OUTDIR/consensus.metrics.tsv
+    touch $OUTDIR/best.ok
 else
     echo "[NOTE] Skipping ocarina"
 fi
 
-if [ ! -f "$OUTDIR/best_refs.paired.fasta" ]; then
+if [ ! -f "$OUTDIR/best.ok" ]; then
     python get_best_ref.py --fasta $COG_PUBLISHED_DIR/latest/elan.consensus.matched.fasta --metrics $OUTDIR/consensus.metrics.tsv --latest $ASKLEPIAN_PUBDIR/latest/best_refs.paired.ls --out-ls $OUTDIR/best_refs.paired.ls > $OUTDIR/best_refs.paired.fasta 2> $OUTDIR/best_refs.log
+    touch $OUTDIR/best.ok
 else
     echo "[NOTE] Skipping get_best_ref.py"
 fi
@@ -55,15 +57,17 @@ fi
 # See https://github.com/COG-UK/grapevine/blob/master/rules/1_preprocess_uk.smk
 
 # uk_minimap2_to_reference
-if [ ! -f "$OUTDIR/output.sam" ]; then
+if [ ! -f "$OUTDIR/sam.ok" ]; then
     minimap2 -t 24 -a -x asm5 $WUHAN_FP $OUTDIR/best_refs.paired.fasta > $OUTDIR/output.sam 2> $OUTDIR/mm2.log
+    touch $OUTDIR/sam.ok
 else
     echo "[NOTE] Skipping minimap2"
 fi
 
 # uk_full_untrimmed_alignment
-if [ ! -f "$OUTDIR/naive_msa.fasta" ]; then
+if [ ! -f "$OUTDIR/mm2.ok" ]; then
     datafunk sam_2_fasta -s $OUTDIR/output.sam -r $WUHAN_FP -o $OUTDIR/naive_msa.fasta 2> $OUTDIR/dfunk.log
+    touch $OUTDIR/mm2.ok
 else
     echo "[NOTE] Skipping sam_2_fasta"
 fi
@@ -75,8 +79,9 @@ fi
 ################################################################################
 
 # Make and push genome table
-if [ ! -f "$OUTDIR/v2_genome_table_$DATESTAMP.csv.gz" ]; then
+if [ ! -f "$OUTDIR/genome_table2.ok" ]; then
     python make_genomes_table_v2.py --fasta $OUTDIR/naive_msa.fasta --meta $OUTDIR/consensus.metrics.tsv --best-ls $OUTDIR/best_refs.paired.ls | gzip > $OUTDIR/v2_genome_table_$DATESTAMP.csv.gz
+    touch $OUTDIR/genome_table2.ok
 else
     echo "[NOTE] Skipping make_genomes_table (v2)"
 fi
@@ -89,8 +94,9 @@ else
 fi
 
 # Make and push variant table
-if [ ! -f "$OUTDIR/variant_table_$DATESTAMP.csv" ]; then
+if [ ! -f "$OUTDIR/variant_table.ok" ]; then
     python make_variants_table.py --ref $WUHAN_FP --msa $OUTDIR/naive_msa.fasta > $OUTDIR/variant_table_$DATESTAMP.csv
+    touch $OUTDIR/variant_table.ok
 else
     echo "[NOTE] Skipping make_variants_table"
 fi
