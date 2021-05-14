@@ -38,7 +38,7 @@ if [ ! -f "$OUTDIR/ocarina.ok" ]; then
         --ofield collection_pillar collection_pillar '' \
         --ofield collection_date collection_date '' \
         --ofield received_date received_date '' > $OUTDIR/consensus.metrics.tsv
-    touch $OUTDIR/best.ok
+    touch $OUTDIR/ocarina.ok
 else
     echo "[NOTE] Skipping ocarina"
 fi
