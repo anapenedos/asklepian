@@ -95,14 +95,14 @@ fi
 
 # Make and push variant table
 if [ ! -f "$OUTDIR/variant_table.ok" ]; then
-    python make_variants_table.py --ref $WUHAN_FP --msa $OUTDIR/naive_msa.fasta > $OUTDIR/variant_table_$DATESTAMP.csv
+    python make_variants_table.py --ref $WUHAN_FP --msa $OUTDIR/naive_msa.fasta | gzip > $OUTDIR/variant_table_$DATESTAMP.csv.gz
     touch $OUTDIR/variant_table.ok
 else
     echo "[NOTE] Skipping make_variants_table"
 fi
 
 if [ ! -f "$OUTDIR/variant_upload.ok" ]; then
-    python upload_azure.py -c genomics -f $OUTDIR/variant_table_$DATESTAMP.csv
+    python upload_azure.py -c genomics -f $OUTDIR/variant_table_$DATESTAMP.csv.gz
     touch $OUTDIR/variant_upload.ok
 else
     echo "[NOTE] Skipping variant upload"
@@ -114,14 +114,15 @@ fi
 # Clean up
 rm -f $OUTDIR/best_refs.paired.fasta
 rm -f $OUTDIR/output.sam
-#rm -f $OUTDIR/v2_genome_table_$DATESTAMP.csv.gz
+rm -f $OUTDIR/v2_genome_table_$DATESTAMP.csv.gz
 rm -f $OUTDIR/consensus.metrics.tsv
 
 # Push artifacts
 PUBDIR="$ASKLEPIAN_PUBDIR/$DATESTAMP"
 mkdir -p $PUBDIR
 mv $OUTDIR/naive_msa.fasta $PUBDIR
-mv $OUTDIR/variant_table_$DATESTAMP.csv $PUBDIR/naive_variant_table.csv
+gunzip -c $OUTDIR/variant_table_$DATESTAMP.csv.gz > $PUBDIR/naive_variant_table.csv # Reinflate variant table for downstream
+rm $OUTDIR/variant_table_$DATESTAMP.csv.gz
 mv $OUTDIR/best_refs.paired.ls $PUBDIR
 ln -fn -s $PUBDIR $ASKLEPIAN_PUBDIR/latest
 
