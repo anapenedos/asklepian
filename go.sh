@@ -11,6 +11,7 @@ cd $ASKLEPIAN_DIR
 DATESTAMP=${ELAN_DATE} # set by mqtt wrapper
 OUTDIR="$ASKLEPIAN_OUTDIR/$DATESTAMP"
 mkdir -p $OUTDIR
+SECONDS=0
 
 # Get best ref for each central_sample_id
 # TODO There is no need to do this de novo but we do so here for simplicity. We would do well to replace this as it will likely become quite slow, especially with IO perf on login node.
@@ -42,6 +43,8 @@ if [ ! -f "$OUTDIR/ocarina.ok" ]; then
 else
     echo "[NOTE] Skipping ocarina"
 fi
+python -c "import datetime; print('ocarina', str(datetime.timedelta(seconds=$SECONDS)))"
+SECONDS=0
 
 if [ ! -f "$OUTDIR/best.ok" ]; then
     python get_best_ref.py --fasta $COG_PUBLISHED_DIR/latest/elan.consensus.matched.fasta --metrics $OUTDIR/consensus.metrics.tsv --latest $ASKLEPIAN_PUBDIR/latest/best_refs.paired.ls --out-ls $OUTDIR/best_refs.paired.ls > $OUTDIR/best_refs.paired.fasta 2> $OUTDIR/best_refs.log
@@ -49,6 +52,8 @@ if [ ! -f "$OUTDIR/best.ok" ]; then
 else
     echo "[NOTE] Skipping get_best_ref.py"
 fi
+python -c "import datetime; print('best', str(datetime.timedelta(seconds=$SECONDS)))"
+SECONDS=0
 
 ################################################################################
 # This stanza emulates the key first rules from phylopipe 1_preprocess_uk
@@ -63,6 +68,8 @@ if [ ! -f "$OUTDIR/sam.ok" ]; then
 else
     echo "[NOTE] Skipping minimap2"
 fi
+python -c "import datetime; print('mm2', str(datetime.timedelta(seconds=$SECONDS)))"
+SECONDS=0
 
 # uk_full_untrimmed_alignment
 if [ ! -f "$OUTDIR/mm2.ok" ]; then
@@ -71,6 +78,8 @@ if [ ! -f "$OUTDIR/mm2.ok" ]; then
 else
     echo "[NOTE] Skipping sam_2_fasta"
 fi
+python -c "import datetime; print('datafunk', str(datetime.timedelta(seconds=$SECONDS)))"
+SECONDS=0
 
 # The 'naive' MSA here is not filtered on person-level identifiers, neither does
 # it consider any filtering or masking. We use it in the knowledge that some
@@ -85,6 +94,8 @@ if [ ! -f "$OUTDIR/genome_table2.ok" ]; then
 else
     echo "[NOTE] Skipping make_genomes_table (v2)"
 fi
+python -c "import datetime; print('make-genome', str(datetime.timedelta(seconds=$SECONDS)))"
+SECONDS=0
 
 if [ ! -f "$OUTDIR/genome_upload2.ok" ]; then
     python upload_azure.py -c genomics -f $OUTDIR/v2_genome_table_$DATESTAMP.csv.gz
@@ -92,6 +103,8 @@ if [ ! -f "$OUTDIR/genome_upload2.ok" ]; then
 else
     echo "[NOTE] Skipping genome upload (v2)"
 fi
+python -c "import datetime; print('push-genome', str(datetime.timedelta(seconds=$SECONDS)))"
+SECONDS=0
 
 # Make and push variant table
 if [ ! -f "$OUTDIR/variant_table.ok" ]; then
@@ -100,6 +113,8 @@ if [ ! -f "$OUTDIR/variant_table.ok" ]; then
 else
     echo "[NOTE] Skipping make_variants_table"
 fi
+python -c "import datetime; print('make-variant', str(datetime.timedelta(seconds=$SECONDS)))"
+SECONDS=0
 
 if [ ! -f "$OUTDIR/variant_upload.ok" ]; then
     python upload_azure.py -c genomics -f $OUTDIR/variant_table_$DATESTAMP.csv
@@ -107,6 +122,8 @@ if [ ! -f "$OUTDIR/variant_upload.ok" ]; then
 else
     echo "[NOTE] Skipping variant upload"
 fi
+python -c "import datetime; print('push-variant', str(datetime.timedelta(seconds=$SECONDS)))"
+SECONDS=0
 
 # Make and push long and wide depth (position) tables
 #python make_depth_table.py
@@ -125,3 +142,5 @@ mv $OUTDIR/variant_table_$DATESTAMP.csv $PUBDIR/naive_variant_table.csv
 mv $OUTDIR/best_refs.paired.ls $PUBDIR
 ln -fn -s $PUBDIR $ASKLEPIAN_PUBDIR/latest
 
+python -c "import datetime; print('finish', str(datetime.timedelta(seconds=$SECONDS)))"
+SECONDS=0
