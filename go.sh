@@ -128,19 +128,33 @@ SECONDS=0
 # Make and push long and wide depth (position) tables
 #python make_depth_table.py
 
-# Clean up
-rm -f $OUTDIR/best_refs.paired.fasta
-rm -f $OUTDIR/output.sam
-#rm -f $OUTDIR/v2_genome_table_$DATESTAMP.csv.gz
-rm -f $OUTDIR/consensus.metrics.tsv
-
-# Push artifacts
 PUBDIR="$ASKLEPIAN_PUBDIR/$DATESTAMP"
 mkdir -p $PUBDIR
-mv $OUTDIR/naive_msa.fasta $PUBDIR
-mv $OUTDIR/variant_table_$DATESTAMP.csv $PUBDIR/naive_variant_table.csv
-mv $OUTDIR/best_refs.paired.ls $PUBDIR
-ln -fn -s $PUBDIR $ASKLEPIAN_PUBDIR/latest
+
+# Clean up and push new artifacts
+if [ ! -f "$OUTDIR/latest.ok" ]; then
+    # Clean
+    rm -f $OUTDIR/best_refs.paired.fasta
+    rm -f $OUTDIR/output.sam
+    #rm -f $OUTDIR/v2_genome_table_$DATESTAMP.csv.gz
+    rm -f $OUTDIR/consensus.metrics.tsv
+
+    # Push
+    mv $OUTDIR/naive_msa.fasta $PUBDIR
+    mv $OUTDIR/variant_table_$DATESTAMP.csv $PUBDIR/naive_variant_table.csv
+    mv $OUTDIR/best_refs.paired.ls $PUBDIR
+    ln -fn -s $PUBDIR $ASKLEPIAN_PUBDIR/latest
+    touch $OUTDIR/latest.ok
+fi
+
+# Remove yesterdays resources and repoint
+if [ ! -f "$OUTDIR/head.ok" ]; then
+    rm $ASKLEPIAN_PUBDIR/head/best_refs.paired.ls
+    rm $ASKLEPIAN_PUBDIR/head/naive_msa.fasta
+    rm $ASKLEPIAN_PUBDIR/head/naive_variant_table.csv
+    ln -fn -s $PUBDIR $ASKLEPIAN_PUBDIR/head
+    touch $OUTDIR/head.ok
+fi
 
 python -c "import datetime; print('finish', str(datetime.timedelta(seconds=$SECONDS)))"
 SECONDS=0
