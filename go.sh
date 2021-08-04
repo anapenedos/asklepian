@@ -2,15 +2,56 @@
 
 # Activate env
 eval "$(conda shell.bash hook)"
-conda activate samstudio8
+conda activate nicholsz-asklepian
 source ~/.ocarina
+
+## Global environment variable override
+## You should provide these somewhere else but you can override them here if you feel like it
+### upload_azure.py
+# AZURE_SAS= # key
+# AZURE_END= # endpoint URL
+### Asklepian
+# ASKLEPIAN_DIR= # git root dir
+# ASKLEPIAN_OUTDIR= # private working dir
+# ASKLEPIAN_PUBDIR= # asklepian root dir for consortium consumption
+### Runtime
+# ELAN_DATE="YYYYMMDD" # elan dir date
+# WUHAN_FP= # path to wuhan ref
+# COG_PUBLISHED_DIR= # consortium readable root elan publish dir
+
+while read var; do
+      [ -z "${!var}" ] && { echo 'Global Asklepian variable '$var' is empty or not set. Environment likely uninitialised. Aborting.'; exit 64; }
+done << EOF
+AZURE_SAS
+AZURE_END
+ASKLEPIAN_DIR
+ASKLEPIAN_OUTDIR
+ASKLEPIAN_PUBDIR
+ELAN_DATE
+WUHAN_FP
+COG_PUBLISHED_DIR
+EOF
+
 set -euo pipefail
 
-# Init outdir
-cd $ASKLEPIAN_DIR
-DATESTAMP=${ELAN_DATE} # set by mqtt wrapper
+# Export variables needed by go_genome and go_variant
+export DATESTAMP=${ELAN_DATE} # set by mqtt wrapper
+export AZURE_SAS=$AZURE_SAS
+export AZURE_END=$AZURE_END
+export ASKLEPIAN_DIR=$ASKLEPIAN_DIR
+export WUHAN_FP=$WUHAN_FP
+
+# For testing, update OUTDIR, PUBDIR, PUBROOT and ensure to override the TABLE_BASENAMEs
 OUTDIR="$ASKLEPIAN_OUTDIR/$DATESTAMP"
+PUBDIR="$ASKLEPIAN_PUBDIR/$DATESTAMP"
+PUBROOT="$ASKLEPIAN_PUBDIR"
+GENOME_TABLE_BASENAME="v2_genome_table_$DATESTAMP"
+VARIANT_TABLE_BASENAME="variant_table_$DATESTAMP"
+LAST_BEST_REFS="$ASKLEPIAN_PUBDIR/latest/best_refs.paired.ls"
+
+# Init outdir
 mkdir -p $OUTDIR
+cd $OUTDIR
 SECONDS=0
 
 # Get best ref for each central_sample_id
@@ -47,7 +88,7 @@ python -c "import datetime; print('ocarina', str(datetime.timedelta(seconds=$SEC
 SECONDS=0
 
 if [ ! -f "$OUTDIR/best.ok" ]; then
-    python get_best_ref.py --fasta $COG_PUBLISHED_DIR/latest/elan.consensus.matched.fasta --metrics $OUTDIR/consensus.metrics.tsv --latest $ASKLEPIAN_PUBDIR/latest/best_refs.paired.ls --out-ls $OUTDIR/best_refs.paired.ls > $OUTDIR/best_refs.paired.fasta 2> $OUTDIR/best_refs.log
+    python $ASKLEPIAN_DIR/get_best_ref.py --fasta $COG_PUBLISHED_DIR/latest/elan.consensus.matched.fasta --metrics $OUTDIR/consensus.metrics.tsv --latest $LAST_BEST_REFS --out-ls $OUTDIR/best_refs.paired.ls > $OUTDIR/best_refs.paired.fasta 2> $OUTDIR/best_refs.log
     touch $OUTDIR/best.ok
 else
     echo "[NOTE] Skipping get_best_ref.py"
@@ -56,105 +97,65 @@ python -c "import datetime; print('best', str(datetime.timedelta(seconds=$SECOND
 SECONDS=0
 
 ################################################################################
-# This stanza emulates the key first rules from phylopipe 1_preprocess_uk
-# that are required to generate a naive insertion-unaware MSA.
-# We perform them here independently while we work to stabilise phylopipe.
-# See https://github.com/COG-UK/grapevine/blob/master/rules/1_preprocess_uk.smk
-
-# uk_minimap2_to_reference
-if [ ! -f "$OUTDIR/sam.ok" ]; then
-    minimap2 -t 24 -a -x asm5 $WUHAN_FP $OUTDIR/best_refs.paired.fasta > $OUTDIR/output.sam 2> $OUTDIR/mm2.log
-    touch $OUTDIR/sam.ok
-else
-    echo "[NOTE] Skipping minimap2"
-fi
-python -c "import datetime; print('mm2', str(datetime.timedelta(seconds=$SECONDS)))"
-SECONDS=0
-
-# uk_full_untrimmed_alignment
-if [ ! -f "$OUTDIR/mm2.ok" ]; then
-    datafunk sam_2_fasta -s $OUTDIR/output.sam -r $WUHAN_FP -o $OUTDIR/naive_msa.fasta 2> $OUTDIR/dfunk.log
-    touch $OUTDIR/mm2.ok
-else
-    echo "[NOTE] Skipping sam_2_fasta"
-fi
-python -c "import datetime; print('datafunk', str(datetime.timedelta(seconds=$SECONDS)))"
-SECONDS=0
-
 # The 'naive' MSA here is not filtered on person-level identifiers, neither does
 # it consider any filtering or masking. We use it in the knowledge that some
 # of the variants may be dirty. Outside of its use for the full variant table here,
-# it should not be considered an equivalent drop-in for the phylopipe MSA.
+# it should not be considered an equivalent drop-in for the datapipe MSA.
+# NOTE 20210729 datafunk was replaced with gofasta to significantly improve performance
+
+if [ ! -f "$OUTDIR/msa.ok" ]; then
+    minimap2 -t 24 -a -x asm5 $WUHAN_FP $OUTDIR/best_refs.paired.fasta 2> $OUTDIR/mm2.log | gofasta sam tomultialign -t 24 --reference $WUHAN_FP -o $OUTDIR/naive_msa.fasta 2> $OUTDIR/gofasta.log
+    touch $OUTDIR/msa.ok
+else
+    echo "[NOTE] Skipping MSA"
+fi
+python -c "import datetime; print('MSA', str(datetime.timedelta(seconds=$SECONDS)))"
+SECONDS=0
 ################################################################################
 
-# Make and push genome table
-if [ ! -f "$OUTDIR/genome_table2.ok" ]; then
-    python make_genomes_table_v2.py --fasta $OUTDIR/naive_msa.fasta --meta $OUTDIR/consensus.metrics.tsv --best-ls $OUTDIR/best_refs.paired.ls | gzip > $OUTDIR/v2_genome_table_$DATESTAMP.csv.gz
-    touch $OUTDIR/genome_table2.ok
-else
-    echo "[NOTE] Skipping make_genomes_table (v2)"
-fi
-python -c "import datetime; print('make-genome', str(datetime.timedelta(seconds=$SECONDS)))"
+# Start the genome and variant tables in parallel, parameters are: $1=WORKDIR $2=OUTDIR $3=TABLE_BASENAME
+# Here we pass OUTDIR as both WORKDIR and OUTDIR for Asklep prod, but alternative OUTDIR can be used for testing
+# Note flags are written to OUTDIR
+$ASKLEPIAN_DIR/go_genome.sh $OUTDIR $OUTDIR $GENOME_TABLE_BASENAME &
+$ASKLEPIAN_DIR/go_variant.sh $OUTDIR $OUTDIR $VARIANT_TABLE_BASENAME &
+
+# Wait for jobs
+wait
+python -c "import datetime; print('(wait)', str(datetime.timedelta(seconds=$SECONDS)))"
 SECONDS=0
 
-if [ ! -f "$OUTDIR/genome_upload2.ok" ]; then
-    python upload_azure.py -c genomics -f $OUTDIR/v2_genome_table_$DATESTAMP.csv.gz
-    touch $OUTDIR/genome_upload2.ok
-else
-    echo "[NOTE] Skipping genome upload (v2)"
+if [ ! -f "$OUTDIR/genome_upload2.ok" ] || [ ! -f "$OUTDIR/variant_upload.ok" ]; then
+    # EX_SOFTWARE
+    exit 70
 fi
-python -c "import datetime; print('push-genome', str(datetime.timedelta(seconds=$SECONDS)))"
-SECONDS=0
 
-# Make and push variant table
-if [ ! -f "$OUTDIR/variant_table.ok" ]; then
-    python make_variants_table.py --ref $WUHAN_FP --msa $OUTDIR/naive_msa.fasta > $OUTDIR/variant_table_$DATESTAMP.csv
-    touch $OUTDIR/variant_table.ok
-else
-    echo "[NOTE] Skipping make_variants_table"
-fi
-python -c "import datetime; print('make-variant', str(datetime.timedelta(seconds=$SECONDS)))"
-SECONDS=0
-
-if [ ! -f "$OUTDIR/variant_upload.ok" ]; then
-    python upload_azure.py -c genomics -f $OUTDIR/variant_table_$DATESTAMP.csv
-    touch $OUTDIR/variant_upload.ok
-else
-    echo "[NOTE] Skipping variant upload"
-fi
-python -c "import datetime; print('push-variant', str(datetime.timedelta(seconds=$SECONDS)))"
-SECONDS=0
-
-# Make and push long and wide depth (position) tables
-#python make_depth_table.py
-
-PUBDIR="$ASKLEPIAN_PUBDIR/$DATESTAMP"
+# Make today's pubdir
 mkdir -p $PUBDIR
 
 # Clean up and push new artifacts
 if [ ! -f "$OUTDIR/latest.ok" ]; then
     # Clean
     rm -f $OUTDIR/best_refs.paired.fasta
-    rm -f $OUTDIR/output.sam
-    #rm -f $OUTDIR/v2_genome_table_$DATESTAMP.csv.gz
+    #rm -f $OUTDIR/${GENOME_TABLE_BASENAME}.csv.gz
     rm -f $OUTDIR/consensus.metrics.tsv
 
     # Push
     mv $OUTDIR/naive_msa.fasta $PUBDIR
-    mv $OUTDIR/variant_table_$DATESTAMP.csv $PUBDIR/naive_variant_table.csv
+    mv $OUTDIR/${VARIANT_TABLE_BASENAME}.csv $PUBDIR/naive_variant_table.csv
     mv $OUTDIR/best_refs.paired.ls $PUBDIR
-    ln -fn -s $PUBDIR $ASKLEPIAN_PUBDIR/latest
+    ln -fn -s $PUBDIR $PUBROOT/latest
     touch $OUTDIR/latest.ok
 fi
 
 # Remove yesterdays resources and repoint
 if [ ! -f "$OUTDIR/head.ok" ]; then
-    rm $ASKLEPIAN_PUBDIR/head/best_refs.paired.ls
-    rm $ASKLEPIAN_PUBDIR/head/naive_msa.fasta
-    rm $ASKLEPIAN_PUBDIR/head/naive_variant_table.csv
-    ln -fn -s $PUBDIR $ASKLEPIAN_PUBDIR/head
+    rm -f $PUBROOT/head/best_refs.paired.ls
+    rm -f $PUBROOT/head/naive_msa.fasta
+    rm -f $PUBROOT/head/naive_variant_table.csv
+    ln -fn -s $PUBDIR $PUBROOT/head
     touch $OUTDIR/head.ok
 fi
 
 python -c "import datetime; print('finish', str(datetime.timedelta(seconds=$SECONDS)))"
 SECONDS=0
+
