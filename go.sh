@@ -136,7 +136,7 @@ mkdir -p $PUBDIR
 if [ ! -f "$OUTDIR/latest.ok" ]; then
     # Clean
     rm -f $OUTDIR/best_refs.paired.fasta
-    #rm -f $OUTDIR/${GENOME_TABLE_BASENAME}.csv.gz
+    rm -f $OUTDIR/${GENOME_TABLE_BASENAME}.csv.gz
     rm -f $OUTDIR/consensus.metrics.tsv
 
     # Push
