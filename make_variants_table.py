@@ -27,9 +27,9 @@ def load_ref_seq(ref):
 
 def get_diffs_from_ref(msa, ref_seq):
     # Open the MSA, iterate over each sequence and walk the genome to find
-    # diagreements with the loaded reference
+    # disagreements with the loaded reference
     # NOTE This particular MSA does not handle insertions
-    print(','.join([
+    yield (','.join([
         "COG-ID",
         "Position",
         "Reference_Base",
@@ -37,8 +37,7 @@ def get_diffs_from_ref(msa, ref_seq):
         "Is_Indel"
     ]))
     with open(msa) as all_fh:
-        for name, seq, qual in readfq(all_fh):
-            central_sample_id = name
+        for central_sample_id, seq, qual in readfq(all_fh):
 
             query_on_ref_pos = 0
             current_deletion_len = 0
@@ -50,7 +49,7 @@ def get_diffs_from_ref(msa, ref_seq):
                 else:
                     if current_deletion_len > 0:
                         # We've come to the end of a deletion, output it
-                        print(','.join([
+                        yield (','.join([
                             central_sample_id,
                             #str( "%d-%d" % ((query_on_ref_pos-current_deletion_len)+1, query_on_ref_pos) ),
                             str((query_on_ref_pos-current_deletion_len)+1),
@@ -66,7 +65,7 @@ def get_diffs_from_ref(msa, ref_seq):
                 if qbase != ref_seq[query_on_ref_pos]:
                     if current_deletion_len == 0:
                         # SNV detected and we aren't in an active DEL
-                        print(','.join([
+                        yield (','.join([
                             central_sample_id,
                             str(query_on_ref_pos+1),
                             ref_seq[query_on_ref_pos],
@@ -81,7 +80,7 @@ def get_diffs_from_ref(msa, ref_seq):
             if current_deletion_len > 0:
                 # Output the last deletion, if there is one
                 # (this is almost always going to be garbage but we include it for completeness)
-                print(','.join([
+                yield (','.join([
                     central_sample_id,
                     #str( "%d-%d" % ((query_on_ref_pos-current_deletion_len)+1, query_on_ref_pos) ),
                     str((query_on_ref_pos-current_deletion_len)+1),
@@ -106,4 +105,4 @@ if __name__ == '__main__':
     except ValueError as e:
         sys.stderr.write(f'{e}\n')
         sys.exit(2)
-    get_diffs_from_ref(args.msa, args.ref)
+    sys.stdout.write(get_diffs_from_ref(args.msa, args.ref))
