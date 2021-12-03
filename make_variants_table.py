@@ -1,8 +1,10 @@
 import os
 import sys
 import argparse
-
 from readfq import readfq # cheers heng
+from dataclasses import dataclass
+from typing import Union
+import pandas as pd
 
 
 def check_exist(ref, msa):
@@ -25,69 +27,230 @@ def load_ref_seq(ref):
             return seq
 
 
-def get_diffs_from_ref(msa, ref_seq):
-    # Open the MSA, iterate over each sequence and walk the genome to find
-    # disagreements with the loaded reference
-    # NOTE This particular MSA does not handle insertions
-    yield (','.join([
-        "COG-ID",
-        "Position",
-        "Reference_Base",
-        "Alternate_Base",
-        "Is_Indel"
-    ]))
+def get_last_base_call_in_seq(sequence):
+    """
+    Given a sequence, returns the position of the last base in the sequence
+    that is not a deletion ('-').
+    """
+    last_base_pos = None
+    for pos_from_end, base in enumerate(sequence[::-1]):
+        if base != '-':
+            last_base_pos = len(sequence) - pos_from_end
+            break
+    return last_base_pos
+
+
+@dataclass
+class SeqComparisonState:
+    """
+    Class to keep track of the comparison between two sequences.
+    The comparison of sequences:
+             1 2 3 4 |5 6 7 8 9 10 11 12 13 14 15 16 17
+        ref: A T G C |G G C T G A  A  T  T  A  A |G  G
+        seq: A C - C |- - - T G A  A  C  T  -  - |-  -
+    would add these lines to the output object provided (StringIO or list):
+        | Pos | Ref | Seq | Is_indel |
+        |:---:|:---:|:---:|:--------:|
+        |  2  |  T  |  C  |    0     |
+        |  3  |     | 1D  |    1     |
+        |  5  |     | 3D  |    1     |
+        | 12  |  T  |  C  |    0     |
+        | 14  |  A  |  N  |    0     |
+        | 15  |  A  |  N  |    0     |
+    Pipes in ref and seq mark the start and end positions within which variant
+    calls are made. Calls are not made outside that range unless a base has
+    been called in seq prior to that position due to low quality sequence.
+    Beginning and end of range can be defined with `analyses_start` and
+    `analyses_end` attributes.
+    """
+    seq_name: str
+    seq_end: int
+    output: Union[str, list]
+    curr_pos: int = 0
+    analyses_start: int = 256
+    analyses_end: int = 29675
+    del_len: int = 0
+    seq_started: bool = False
+    in_variant_call_range: bool = False
+
+    def _emit(self, pos, ref_base, seq_base, is_indel):
+        """Write relevant variant call to output given."""
+        if isinstance(self.output, str):
+            self.output += (
+                ','.join(
+                    [self.seq_name, str(pos), ref_base, seq_base, str(is_indel)
+                     ]))
+            self.output += '\n'
+        elif isinstance(self.output, list):
+            self.output.append(
+                [self.seq_name, pos, ref_base, seq_base, is_indel])
+
+    def process_pair(self, ref_base, seq_base):
+        """
+        Compare the nucleotide in the reference and the sequence being
+        compared, keeping track of deletions and differences (not insertions).
+        """
+        self.curr_pos += 1
+        # Handle beginning and end of sequence differently.
+        if self.analyses_start <= self.curr_pos <= self.analyses_end:
+            self.in_variant_call_range = True
+        else:
+            self.in_variant_call_range = False
+
+        # Handle deletions.
+        if seq_base == '-':
+            # if in the range of positions in the sequence for which a base has
+            # been called, track deletion length regardless of whether in the
+            # variant calling range
+            if self.seq_started and self.curr_pos < self.seq_end:
+                self.del_len += 1
+                return
+            # if out of base calls position range, if in the variant call
+            # range, emit an 'N' so that variant caller knows this is a low QC
+            # seq rather than a real deletion
+            elif self.in_variant_call_range:
+                self._emit(self.curr_pos, ref_base, 'N', 0)
+                return
+            # if no base has been called yet and we are out of the variant call
+            # range, skip position
+            else:
+                return
+        # get length of previous deletion if base found
+        elif self.del_len != 0 and self.seq_started:
+            self._emit(
+                self.curr_pos - self.del_len, '', f'{self.del_len}D', 1)
+            self.del_len = 0
+        # Mark sequence started when the first base is called
+        else:
+            if not self.seq_started:
+                self.seq_started = True
+
+        # Handle end-of-sequence marker
+        if seq_base is None:
+            # We only want the end-of-deletion handling above.
+            return
+
+        # Report differences
+        if seq_base != ref_base:
+            self._emit(self.curr_pos, ref_base, seq_base, 0)
+
+
+def process_seq(
+        central_sample_id, seq, ref_seq, output='',
+        first_analysed_nt=256, last_analysed_nt=29675):
+    """
+    Return variants table for a sequence.
+
+    Parameters
+    ----------
+    msa : str or pathlib.Path
+        Path to a multiple sequence alignment file.
+    ref_seq_fp : str or pathlib.Path
+        Path to a reference sequence to compare wach sequence in the MSA to.
+    output : str or list, default ''
+        If '' is passed, returns a csv-like string to be passed to stdout.
+        If [] is passed, returns a list of lists to be passed to a dataframe
+        (each sub-list is a row).
+    first_analysed_nt : int, default 256
+        The position of the first base used for variant calling (genome termini
+        ignored due to low QC base calls).
+    last_analysed_nt : int, default 29675
+        Like `first_analysed_nt`, but the last position used for variant
+        calling.
+
+    Returns
+    -------
+    str or list
+        A csv-like str object or a list of lists to be passed to the `data`
+        keyword argument of a pandas dataframe.
+    """
+    # create a sequence comparison object
+    comparator = SeqComparisonState(
+        central_sample_id,
+        get_last_base_call_in_seq(seq),
+        output,
+        analyses_start=first_analysed_nt,
+        analyses_end=last_analysed_nt)
+    # compare seq to ref
+    for ref_base, seq_base in zip(ref_seq, seq):
+        comparator.process_pair(ref_base, seq_base)
+    # ensure last deletion if any is processed
+    comparator.process_pair(None, None)
+    return comparator.output
+
+
+def process_msa_to_cmd_line(
+        msa, ref_seq_fp, first_analysed_nt=256, last_analysed_nt=29675):
+    """
+    Compare sequences in a MSA to a reference sequence and send the variants
+    table to a pandas dataframe.
+
+    Parameters
+    ----------
+    msa : str or pathlib.Path
+        Path to a multiple sequence alignment file.
+    ref_seq_fp : str or pathlib.Path
+        Path to a reference sequence to compare wach sequence in the MSA to.
+    first_analysed_nt : int, default 256
+        The position of the first base used for variant calling (genome termini
+        ignored due to low QC base calls).
+    last_analysed_nt : int, default 29675
+        Like `first_analysed_nt`, but the last position used for variant
+        calling.
+
+    pd.DataFrame
+        Pandas dataframe containing the variants table for the MSA.
+    """
+    try:
+        ref_seq = load_ref_seq(ref_seq_fp)
+    except ValueError as e:
+        sys.stderr.write(f'{e}\n')
+        sys.exit(2)
+
+    column_names = ['COG-ID', 'Position', 'Reference_Base', 'Alternate_Base',
+                    'Is_Indel']
+    sys.stdout.write(','.join(column_names))
+    sys.stdout.write('\n')
     with open(msa) as all_fh:
-        for central_sample_id, seq, qual in readfq(all_fh):
+        for central_sample_id, seq, _ in readfq(all_fh):
+            output = process_seq(
+                central_sample_id, seq, ref_seq, output='',
+                first_analysed_nt=first_analysed_nt,
+                last_analysed_nt=last_analysed_nt)
+            sys.stdout.write(output)
 
-            query_on_ref_pos = 0
-            current_deletion_len = 0
 
-            for qbase in seq:
-                if qbase == '-':
-                    # Extend the length of the current deletion
-                    current_deletion_len += 1
-                else:
-                    if current_deletion_len > 0:
-                        # We've come to the end of a deletion, output it
-                        yield (','.join([
-                            central_sample_id,
-                            #str( "%d-%d" % ((query_on_ref_pos-current_deletion_len)+1, query_on_ref_pos) ),
-                            str((query_on_ref_pos-current_deletion_len)+1),
-                            "",
-                            "%dD" % current_deletion_len,
-                            "1",
-                        ]))
-                        current_deletion_len = 0
+def process_msa_to_dataframe(
+        msa, ref_seq_fp, first_analysed_nt=256, last_analysed_nt=29675):
+    """
+    Compare sequences in a MSA to a reference sequence and send the variants
+    table to stdout in csv format.
 
-                # Now deletions are handled, check for single nucleotide variants
-                # NOTE This includes missing data such as N
-                # NOTE This algorithm does not consider INS against ref
-                if qbase != ref_seq[query_on_ref_pos]:
-                    if current_deletion_len == 0:
-                        # SNV detected and we aren't in an active DEL
-                        yield (','.join([
-                            central_sample_id,
-                            str(query_on_ref_pos+1),
-                            ref_seq[query_on_ref_pos],
-                            qbase,
-                            "0",
-                        ]))
+    Parameters
+    ----------
+    msa : str or pathlib.Path
+        Path to a multiple sequence alignment file.
+    ref_seq_fp : str or pathlib.Path
+        Path to a reference sequence to compare wach sequence in the MSA to.
+    first_analysed_nt : int, default 256
+        The position of the first base used for variant calling (genome termini
+        ignored due to low QC base calls).
+    last_analysed_nt : int, default 29675
+        Like `first_analysed_nt`, but the last position used for variant
+        calling.
+    """
+    ref_seq = load_ref_seq(ref_seq_fp)
 
-                # Advance pointer (this is overkill here but a useful starting point
-                # for a future algo walking the ref for insertions)
-                query_on_ref_pos += 1
-
-            if current_deletion_len > 0:
-                # Output the last deletion, if there is one
-                # (this is almost always going to be garbage but we include it for completeness)
-                yield (','.join([
-                    central_sample_id,
-                    #str( "%d-%d" % ((query_on_ref_pos-current_deletion_len)+1, query_on_ref_pos) ),
-                    str((query_on_ref_pos-current_deletion_len)+1),
-                    "",
-                    "%dD" % current_deletion_len,
-                    "1",
-                ]))
+    column_names = ['COG-ID', 'Position', 'Reference_Base', 'Alternate_Base',
+                    'Is_Indel']
+    data = []
+    with open(msa) as all_fh:
+        for central_sample_id, seq, _ in readfq(all_fh):
+            data.extend(process_seq(
+                central_sample_id, seq, ref_seq, output=[],
+                first_analysed_nt=first_analysed_nt,
+                last_analysed_nt=last_analysed_nt))
+    return pd.DataFrame(columns=column_names, data=data)
 
 
 if __name__ == '__main__':
@@ -100,9 +263,4 @@ if __name__ == '__main__':
     except FileNotFoundError as e:
         sys.stderr.write(f'{e}\n')
         sys.exit(1)
-    try:
-        load_ref_seq(args.ref)
-    except ValueError as e:
-        sys.stderr.write(f'{e}\n')
-        sys.exit(2)
-    sys.stdout.write(get_diffs_from_ref(args.msa, args.ref))
+    process_msa_to_cmd_line(args.msa, args.ref)
